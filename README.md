@@ -1,4 +1,4 @@
-# nml-proxy
+# ndl-webui
 
 A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, and returns them as a single ZIP file.
 
