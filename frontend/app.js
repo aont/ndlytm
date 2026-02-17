@@ -1,6 +1,44 @@
 let currentJobId = null;
 let pollInterval = null;
 
+const BACKEND_STORAGE_KEY = "backendBaseUri";
+
+
+function normalizeBackendBaseUri(uri) {
+    return uri.replace(/\/$/, "");
+}
+
+function getBackendBaseUri() {
+    const inputValue = document.getElementById("backendBaseUri").value.trim();
+    if (!inputValue) {
+        return "";
+    }
+    return normalizeBackendBaseUri(inputValue);
+}
+
+function buildApiUrl(path) {
+    const backendBaseUri = getBackendBaseUri();
+    if (!backendBaseUri) {
+        return path;
+    }
+    return `${backendBaseUri}${path}`;
+}
+
+function restoreBackendBaseUri() {
+    const saved = localStorage.getItem(BACKEND_STORAGE_KEY);
+    if (!saved) return;
+    document.getElementById("backendBaseUri").value = saved;
+}
+
+function saveBackendBaseUri() {
+    const value = getBackendBaseUri();
+    if (!value) {
+        localStorage.removeItem(BACKEND_STORAGE_KEY);
+        return;
+    }
+    localStorage.setItem(BACKEND_STORAGE_KEY, value);
+}
+
 /* ----------------------------------------
    Prefill from URL fragment
 ---------------------------------------- */
@@ -39,7 +77,9 @@ document.getElementById("startBtn").onclick = async () => {
         return;
     }
 
-    const resp = await fetch("/start", {
+    saveBackendBaseUri();
+
+    const resp = await fetch(buildApiUrl("/start"), {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(parsed)
@@ -59,7 +99,7 @@ document.getElementById("startBtn").onclick = async () => {
 ---------------------------------------- */
 
 async function pollProgress() {
-    const resp = await fetch(`/progress/${currentJobId}`);
+    const resp = await fetch(buildApiUrl(`/progress/${currentJobId}`));
     const data = await resp.json();
 
     const percent = data.total
@@ -87,7 +127,7 @@ async function fetchZipIntoMemory() {
     document.getElementById("progressText").innerText =
         "Downloading ZIP into memory...";
 
-    const resp = await fetch(`/download/${currentJobId}`);
+    const resp = await fetch(buildApiUrl(`/download/${currentJobId}`));
     if (!resp.ok) {
         alert("Failed to download ZIP");
         return;
@@ -111,5 +151,9 @@ async function fetchZipIntoMemory() {
 ---------------------------------------- */
 
 window.addEventListener("DOMContentLoaded", () => {
+    restoreBackendBaseUri();
+
+    document.getElementById("backendBaseUri").addEventListener("change", saveBackendBaseUri);
+
     prefillFromHash();
 });

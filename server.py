@@ -26,6 +26,24 @@ catalogname_pat = re.compile(r"(.*)（(.*)）")
 jobs = {}
 
 
+@web.middleware
+async def cors_middleware(request, handler):
+    if request.method == "OPTIONS":
+        response = web.Response(status=204)
+    else:
+        response = await handler(request)
+
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+
+
 class JobState:
     def __init__(self):
         self.progress = 0
@@ -147,7 +165,7 @@ async def download_zip(request):
     )
 
 
-app = web.Application()
+app = web.Application(middlewares=[cors_middleware])
 app.router.add_post("/start", start_job)
 app.router.add_get("/progress/{job_id}", get_progress)
 app.router.add_get("/download/{job_id}", download_zip)

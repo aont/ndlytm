@@ -30,6 +30,8 @@ python3 server.py
 
 The app starts on `http://127.0.0.1:8080`.
 
+If you host frontend and backend on different domains, set **Backend Base URI** in the UI (for example, `https://api.example.com`). The value is persisted in browser `localStorage`.
+
 ## Input JSON format
 
 Paste JSON into the UI in this shape:
