@@ -25,10 +25,12 @@ pip install aiohttp mutagen
 ## Run
 
 ```bash
-python3 server.py
+python3 server.py --port 8080
 ```
 
 The app starts on `http://127.0.0.1:8080`.
+
+`--port` can be changed to run the backend on a different port.
 
 If you host frontend and backend on different domains, set **Backend Base URI** in the UI (for example, `https://api.example.com`). The value is persisted in browser `localStorage`.
 

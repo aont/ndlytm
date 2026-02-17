@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import asyncio
+import argparse
 import json
 import os
 import re
@@ -165,10 +166,28 @@ async def download_zip(request):
     )
 
 
-app = web.Application(middlewares=[cors_middleware])
-app.router.add_post("/start", start_job)
-app.router.add_get("/progress/{job_id}", get_progress)
-app.router.add_get("/download/{job_id}", download_zip)
-app.router.add_static("/", path="./frontend", show_index=True)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port number for backend server"
+    )
+    return parser.parse_args()
 
-web.run_app(app, port=8080)
+
+def main():
+    args = parse_args()
+
+    app = web.Application(middlewares=[cors_middleware])
+    app.router.add_post("/start", start_job)
+    app.router.add_get("/progress/{job_id}", get_progress)
+    app.router.add_get("/download/{job_id}", download_zip)
+    app.router.add_static("/", path="./frontend", show_index=True)
+
+    web.run_app(app, port=args.port)
+
+
+if __name__ == "__main__":
+    main()
