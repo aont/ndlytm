@@ -58,9 +58,15 @@ function prefillFromHash() {
 
     if (!jsonInputParam) return;
 
+    const clearHashPrefillParams = () => {
+        const cleanUrl = `${window.location.pathname}${window.location.search}`;
+        window.history.pushState({}, document.title, cleanUrl);
+    };
+
     try {
         const decoded = decodeURIComponent(jsonInputParam);
         document.getElementById("jsonInput").value = decoded;
+        clearHashPrefillParams();
     } catch (e) {
         console.error("Failed to decode jsonInput");
     }
