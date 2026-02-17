@@ -135,37 +135,20 @@ async function pollProgress() {
 
     if (data.done) {
         clearInterval(pollInterval);
-        await fetchZipIntoMemory();
+        showDownloadLink();
     }
 }
 
 /* ----------------------------------------
-   Fetch ZIP and create blob URL
+   Prepare ZIP download link
 ---------------------------------------- */
 
-async function fetchZipIntoMemory() {
-    document.getElementById("progressText").innerText =
-        "Downloading ZIP into memory...";
-
+function showDownloadLink() {
     const downloadUrl = buildApiUrl(`/download/${currentJobId}`);
-    debugLog("Fetching ZIP", { downloadUrl, currentJobId });
-
-    const resp = await fetch(downloadUrl);
-    debugLog("Download response", { status: resp.status, ok: resp.ok });
-    if (!resp.ok) {
-        const errorText = `Failed to download ZIP (status=${resp.status})`;
-        alert(errorText);
-        document.getElementById("progressText").innerText = errorText;
-        return;
-    }
-
-    const blob = await resp.blob();
-    debugLog("ZIP blob received", { size: blob.size, type: blob.type });
-
-    const blobUrl = URL.createObjectURL(blob);
+    debugLog("Preparing ZIP download link", { downloadUrl, currentJobId });
 
     const link = document.getElementById("downloadLink");
-    link.href = blobUrl;
+    link.href = downloadUrl;
 
     document.getElementById("downloadSection").style.display = "block";
 
