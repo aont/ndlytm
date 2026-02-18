@@ -62,7 +62,9 @@ Paste JSON into the UI in this shape:
 
 ## Bookmarklet helper
 
-`bookmarklet.js` builds a URL containing prefilled JSON (`Cookie`, `BaseURL`, `PlayListsTracks`) and opens this app.
+`bookmarklet.js` builds a URL containing prefilled JSON (`Cookie`, `BaseURL`, `PlayListsTracks`, `AlbumArt`) and opens this app.
+
+The bookmarklet explicitly reads the album image (`#album-link > img`) from the source page, stores it in `AlbumArt`, and passes it along in the generated payload.
 
 If `AlbumArt` is provided in the JSON payload, the backend downloads that image once per job and writes it into each tagged `.m4a` file using Mutagen before upload.
 
