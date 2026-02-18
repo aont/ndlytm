@@ -23,6 +23,10 @@ pre {
     overflow-y: scroll;
 }
 
+#progressBar {
+    width: 100%;
+}
+
 #logOutput {
     background: #f3f3f3;
     color: #222;
