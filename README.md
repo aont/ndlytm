@@ -9,7 +9,7 @@ A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 m
 - Tags each file with title/artist/album/track number
 - Optionally embeds album art from a top-level `AlbumArt` URL
 - Uploads each processed track to YouTube Music with `ytmusicapi`
-- Streams job progress and logs while processing
+- Streams progress and logs for the currently running job
 
 ## Requirements
 
@@ -68,7 +68,7 @@ If `AlbumArt` is provided in the JSON payload, the backend downloads that image 
 
 ## Endpoints
 
-- `POST /start` — create an upload job
+- `POST /start` — start an upload job (returns `409` if another job is running)
 - `GET /progress/{job_id}` — get progress + recent logs
 - `GET /progress-stream/{job_id}` — stream progress events
 

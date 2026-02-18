@@ -1,6 +1,5 @@
 let currentJobId = null;
 let progressEventSource = null;
-let latestLogRefreshRequestId = 0;
 
 function debugLog(...args) {
     console.debug("[ndl-webui]", ...args);
@@ -124,8 +123,7 @@ document.getElementById("startBtn").onclick = async () => {
     saveActiveJobId(currentJobId);
 
     document.getElementById("progressSection").style.display = "block";
-    document.getElementById("progressText").innerText =
-        `Job queued${data.queue_position ? ` (position: ${data.queue_position})` : ""}`;
+    document.getElementById("progressText").innerText = "Job started";
 
     subscribeProgressStream();
 };
@@ -166,15 +164,10 @@ function updateProgressUI(data) {
 
     document.getElementById("progressBar").value = percent;
 
-    if (data.status === "queued") {
-        document.getElementById("progressText").innerText = "Job is queued and waiting for previous job to complete";
-    } else {
-        document.getElementById("progressText").innerText =
-            `Progress: ${data.progress} / ${data.total} (uploaded: ${data.uploaded || 0})`;
-    }
+    document.getElementById("progressText").innerText =
+        `Progress: ${data.progress} / ${data.total} (uploaded: ${data.uploaded || 0})`;
 
     renderCurrentJobLogs(data.logs || []);
-    refreshAllJobLogs();
 
     if (data.error) {
         if (progressEventSource) {
@@ -203,35 +196,6 @@ function renderCurrentJobLogs(logs) {
     document.getElementById("logOutput").innerText = logs.join("\n");
 }
 
-function buildCombinedLogs(jobs) {
-    return jobs.flatMap((job) =>
-        (job.logs || []).map((message) => `[${job.job_id}] ${message}`)
-    );
-}
-
-async function refreshAllJobLogs() {
-    const requestId = ++latestLogRefreshRequestId;
-
-    try {
-        const jobsResp = await fetch(buildApiUrl("/jobs"));
-        if (!jobsResp.ok) {
-            return;
-        }
-
-        const jobsData = await jobsResp.json();
-        if (requestId !== latestLogRefreshRequestId) {
-            return;
-        }
-
-        const combinedLogs = buildCombinedLogs(jobsData.jobs || []);
-        if (combinedLogs.length > 0) {
-            document.getElementById("logOutput").innerText = combinedLogs.join("\n");
-        }
-    } catch (error) {
-        debugLog("Failed to refresh all job logs", error);
-    }
-}
-
 async function hydrateJobFromServer(jobId) {
     const progressUrl = buildApiUrl(`/progress/${jobId}`);
     const resp = await fetch(progressUrl);
@@ -252,7 +216,6 @@ async function resumeLatestJob() {
         try {
             const data = await hydrateJobFromServer(savedJobId);
             updateProgressUI(data);
-            refreshAllJobLogs();
             if (!data.done && !data.error) {
                 subscribeProgressStream();
             }
@@ -261,29 +224,6 @@ async function resumeLatestJob() {
             debugLog("Failed to restore saved job", error);
             saveActiveJobId(null);
         }
-    }
-
-    try {
-        const jobsResp = await fetch(buildApiUrl("/jobs"));
-        if (!jobsResp.ok) {
-            return;
-        }
-
-        const jobsData = await jobsResp.json();
-        const activeJob = (jobsData.jobs || []).find((job) => !job.done && !job.error);
-
-        if (!activeJob) {
-            return;
-        }
-
-        currentJobId = activeJob.job_id;
-        saveActiveJobId(currentJobId);
-        document.getElementById("progressSection").style.display = "block";
-        updateProgressUI(activeJob);
-        refreshAllJobLogs();
-        subscribeProgressStream();
-    } catch (error) {
-        debugLog("Failed to hydrate latest jobs list", error);
     }
 }
 
