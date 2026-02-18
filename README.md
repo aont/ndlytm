@@ -1,4 +1,4 @@
-# ndl-webui
+# ndlytm
 
 A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, and uploads them to YouTube Music via `ytmusicapi`.
 
