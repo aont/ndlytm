@@ -1,13 +1,12 @@
-let currentJobId = null;
-let progressEventSource = null;
+let currentJobs = new Map();
+let progressEventSources = new Map();
 
 function debugLog(...args) {
     console.debug("[ndl-webui]", ...args);
 }
 
 const BACKEND_STORAGE_KEY = "ndlytmBackendBaseUri";
-const ACTIVE_JOB_STORAGE_KEY = "ndlytmActiveJobId";
-
+const ACTIVE_JOBS_STORAGE_KEY = "ndlytmActiveJobIds";
 
 function normalizeBackendBaseUri(uri) {
     return uri.replace(/\/$/, "");
@@ -44,17 +43,32 @@ function saveBackendBaseUri() {
     localStorage.setItem(BACKEND_STORAGE_KEY, value);
 }
 
-function saveActiveJobId(jobId) {
-    if (!jobId) {
-        localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+function saveTrackedJobIds() {
+    const unfinishedJobs = Array.from(currentJobs.entries())
+        .filter(([, data]) => !data.done && !data.error)
+        .map(([jobId]) => jobId);
+
+    if (unfinishedJobs.length === 0) {
+        localStorage.removeItem(ACTIVE_JOBS_STORAGE_KEY);
         return;
     }
 
-    localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, jobId);
+    localStorage.setItem(ACTIVE_JOBS_STORAGE_KEY, JSON.stringify(unfinishedJobs));
 }
 
-function restoreActiveJobId() {
-    return localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+function restoreTrackedJobIds() {
+    const raw = localStorage.getItem(ACTIVE_JOBS_STORAGE_KEY);
+    if (!raw) {
+        return [];
+    }
+
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        debugLog("Failed to parse saved job IDs", error);
+        return [];
+    }
 }
 
 /* ----------------------------------------
@@ -84,6 +98,93 @@ function prefillFromHash() {
     } catch (e) {
         console.error("Failed to decode jsonInput");
     }
+}
+
+function getOrCreateJobElement(jobId) {
+    const jobsSection = document.getElementById("jobsSection");
+    jobsSection.style.display = "block";
+
+    let card = document.getElementById(`job-${jobId}`);
+    if (card) {
+        return card;
+    }
+
+    card = document.createElement("section");
+    card.className = "job-card";
+    card.id = `job-${jobId}`;
+
+    card.innerHTML = `
+        <h3>Job <code>${jobId}</code></h3>
+        <p class="job-status" id="status-${jobId}">Status: queued</p>
+        <p class="job-progress" id="progress-${jobId}">Progress: 0 / 0 (uploaded: 0)</p>
+        <progress id="bar-${jobId}" value="0" max="100"></progress>
+        <pre id="logs-${jobId}" class="job-logs"></pre>
+    `;
+
+    jobsSection.prepend(card);
+    return card;
+}
+
+function renderJobUI(jobId, data) {
+    currentJobs.set(jobId, data);
+    getOrCreateJobElement(jobId);
+
+    const percent = data.total
+        ? (data.progress / data.total) * 100
+        : 0;
+
+    document.getElementById(`status-${jobId}`).innerText = `Status: ${data.status || "unknown"}`;
+    document.getElementById(`bar-${jobId}`).value = percent;
+    document.getElementById(`progress-${jobId}`).innerText =
+        `Progress: ${data.progress} / ${data.total} (uploaded: ${data.uploaded || 0})`;
+
+    const logs = data.logs || [];
+    document.getElementById(`logs-${jobId}`).innerText = logs.join("\n");
+
+    if (data.error) {
+        document.getElementById(`status-${jobId}`).innerText = `Status: failed (${data.error})`;
+        closeProgressStream(jobId);
+    } else if (data.done) {
+        document.getElementById(`status-${jobId}`).innerText =
+            `Status: completed (uploaded: ${data.uploaded || 0})`;
+        closeProgressStream(jobId);
+    }
+
+    saveTrackedJobIds();
+}
+
+function closeProgressStream(jobId) {
+    const source = progressEventSources.get(jobId);
+    if (!source) {
+        return;
+    }
+
+    source.close();
+    progressEventSources.delete(jobId);
+}
+
+function subscribeProgressStream(jobId) {
+    if (!jobId) {
+        return;
+    }
+
+    closeProgressStream(jobId);
+
+    const progressStreamUrl = buildApiUrl(`/progress-stream/${jobId}`);
+    debugLog("Subscribing progress stream", { progressStreamUrl, jobId });
+
+    const eventSource = new EventSource(progressStreamUrl);
+    progressEventSources.set(jobId, eventSource);
+
+    eventSource.addEventListener("progress", (event) => {
+        const data = JSON.parse(event.data);
+        debugLog("Progress stream event", { jobId, data });
+        renderJobUI(jobId, data);
+    });
+
+    eventSource.onerror = (error) => {
+        debugLog("Progress stream error", { jobId, error });
+    };
 }
 
 /* ----------------------------------------
@@ -119,82 +220,20 @@ document.getElementById("startBtn").onclick = async () => {
 
     const data = await resp.json();
     debugLog("Start response", { status: resp.status, data });
-    currentJobId = data.job_id;
-    saveActiveJobId(currentJobId);
 
-    document.getElementById("progressSection").style.display = "block";
-    document.getElementById("progressText").innerText = "Job started";
-
-    subscribeProgressStream();
-};
-
-/* ----------------------------------------
-   Progress stream (SSE)
----------------------------------------- */
-
-function subscribeProgressStream() {
-    if (!currentJobId) {
-        return;
-    }
-
-    if (progressEventSource) {
-        progressEventSource.close();
-    }
-
-    const progressStreamUrl = buildApiUrl(`/progress-stream/${currentJobId}`);
-    debugLog("Subscribing progress stream", { progressStreamUrl, currentJobId });
-
-    progressEventSource = new EventSource(progressStreamUrl);
-
-    progressEventSource.addEventListener("progress", (event) => {
-        const data = JSON.parse(event.data);
-        debugLog("Progress stream event", data);
-        updateProgressUI(data);
-    });
-
-    progressEventSource.onerror = (error) => {
-        debugLog("Progress stream error", error);
+    const initialState = {
+        progress: 0,
+        total: 0,
+        done: false,
+        error: null,
+        uploaded: 0,
+        status: data.status || "queued",
+        logs: [`Queued job ${data.job_id}`]
     };
-}
 
-function updateProgressUI(data) {
-    const percent = data.total
-        ? (data.progress / data.total) * 100
-        : 0;
-
-    document.getElementById("progressBar").value = percent;
-
-    document.getElementById("progressText").innerText =
-        `Progress: ${data.progress} / ${data.total} (uploaded: ${data.uploaded || 0})`;
-
-    renderCurrentJobLogs(data.logs || []);
-
-    if (data.error) {
-        if (progressEventSource) {
-            progressEventSource.close();
-            progressEventSource = null;
-        }
-        document.getElementById("progressText").innerText = `Job failed: ${data.error}`;
-        debugLog("Job failed", { data });
-        saveActiveJobId(null);
-        return;
-    }
-
-    if (data.done) {
-        if (progressEventSource) {
-            progressEventSource.close();
-            progressEventSource = null;
-        }
-
-        document.getElementById("progressText").innerText =
-            `Upload completed: ${data.uploaded || 0} tracks uploaded to YouTube Music`;
-        saveActiveJobId(null);
-    }
-}
-
-function renderCurrentJobLogs(logs) {
-    document.getElementById("logOutput").innerText = logs.join("\n");
-}
+    renderJobUI(data.job_id, initialState);
+    subscribeProgressStream(data.job_id);
+};
 
 async function hydrateJobFromServer(jobId) {
     const progressUrl = buildApiUrl(`/progress/${jobId}`);
@@ -207,24 +246,23 @@ async function hydrateJobFromServer(jobId) {
     return resp.json();
 }
 
-async function resumeLatestJob() {
-    const savedJobId = restoreActiveJobId();
-    if (savedJobId) {
-        currentJobId = savedJobId;
-        document.getElementById("progressSection").style.display = "block";
+async function resumeTrackedJobs() {
+    const savedJobIds = restoreTrackedJobIds();
+    for (const jobId of savedJobIds) {
+        getOrCreateJobElement(jobId);
 
         try {
-            const data = await hydrateJobFromServer(savedJobId);
-            updateProgressUI(data);
+            const data = await hydrateJobFromServer(jobId);
+            renderJobUI(jobId, data);
             if (!data.done && !data.error) {
-                subscribeProgressStream();
+                subscribeProgressStream(jobId);
             }
-            return;
         } catch (error) {
-            debugLog("Failed to restore saved job", error);
-            saveActiveJobId(null);
+            debugLog("Failed to restore saved job", { jobId, error });
         }
     }
+
+    saveTrackedJobIds();
 }
 
 /* ----------------------------------------
@@ -237,5 +275,5 @@ window.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("backendBaseUri").addEventListener("change", saveBackendBaseUri);
 
     prefillFromHash();
-    await resumeLatestJob();
+    await resumeTrackedJobs();
 });

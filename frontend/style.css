@@ -23,15 +23,32 @@ pre {
     overflow-y: scroll;
 }
 
-#progressBar {
+progress {
     width: 100%;
 }
 
-#logOutput {
-    background: #f3f3f3;
-    color: #222;
+.job-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 14px;
+    margin-top: 16px;
+    background: #fafafa;
 }
 
+.job-card h3 {
+    margin: 0 0 8px;
+}
+
+.job-status,
+.job-progress {
+    margin: 6px 0;
+}
+
+.job-logs {
+    background: #f3f3f3;
+    color: #222;
+    margin: 10px 0 0;
+}
 
 input[type="url"] {
     width: 100%;

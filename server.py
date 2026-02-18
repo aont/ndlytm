@@ -52,7 +52,7 @@ class JobState:
         self.done = False
         self.error = None
         self.uploaded = 0
-        self.status = "running"
+        self.status = "queued"
 
     def snapshot(self):
         return {
@@ -175,44 +175,58 @@ async def process_job(job_id, payload):
         logging.exception("Unhandled exception during job %s", job_id)
 
 
+async def on_startup(app):
+    app["queue_worker_task"] = asyncio.create_task(queue_worker(app))
+
+
 async def on_cleanup(app):
+    worker_task = app.get("queue_worker_task")
+    if worker_task and not worker_task.done():
+        worker_task.cancel()
+
     running_jobs = [task for task in app.get("job_tasks", set()) if not task.done()]
     for task in running_jobs:
         task.cancel()
     if running_jobs:
         await asyncio.gather(*running_jobs, return_exceptions=True)
 
+    if worker_task:
+        await asyncio.gather(worker_task, return_exceptions=True)
+
+
+async def queue_worker(app):
+    queue = app["job_queue"]
+    while True:
+        job_id, payload = await queue.get()
+        state = jobs.get(job_id)
+        if not state:
+            queue.task_done()
+            continue
+
+        state.log(f"Dequeued job {job_id} for processing")
+
+        task = asyncio.create_task(process_job(job_id, payload))
+        app_tasks = app["job_tasks"]
+        app_tasks.add(task)
+        task.add_done_callback(app_tasks.discard)
+        await task
+        queue.task_done()
+
 
 async def start_job(request):
     payload = await request.json()
 
-    active_job_id = next((job_id for job_id, state in jobs.items() if state.status == "running"), None)
-    if active_job_id:
-        logging.info(
-            "Rejected /start request because job_id=%s is already %s",
-            active_job_id,
-            jobs[active_job_id].status,
-        )
-        return web.json_response(
-            {
-                "error": "A job is already being processed",
-                "active_job_id": active_job_id,
-                "active_job_status": jobs[active_job_id].status,
-            },
-            status=409,
-        )
-
     job_id = str(uuid.uuid4())
 
-    jobs[job_id] = JobState()
+    state = JobState()
+    jobs[job_id] = state
     logging.info("Received /start request, assigned job_id=%s", job_id)
 
-    task = asyncio.create_task(process_job(job_id, payload))
-    app_tasks = request.app["job_tasks"]
-    app_tasks.add(task)
-    task.add_done_callback(app_tasks.discard)
+    state.log(f"Queued job {job_id}")
+    queue = request.app["job_queue"]
+    await queue.put((job_id, payload))
 
-    return web.json_response({"job_id": job_id})
+    return web.json_response({"job_id": job_id, "status": state.status})
 
 
 async def get_progress(request):
@@ -301,6 +315,8 @@ def main():
 
     app = web.Application(middlewares=[cors_middleware])
     app["job_tasks"] = set()
+    app["job_queue"] = asyncio.Queue()
+    app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     app.router.add_post("/start", start_job)
     app.router.add_get("/progress/{job_id}", get_progress)
