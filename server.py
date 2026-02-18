@@ -202,6 +202,26 @@ async def on_cleanup(app):
 
 async def start_job(request):
     payload = await request.json()
+
+    active_job_id = next(
+        (job_id for job_id, state in jobs.items() if state.status in {"queued", "running"}),
+        None,
+    )
+    if active_job_id:
+        logging.info(
+            "Rejected /start request because job_id=%s is already %s",
+            active_job_id,
+            jobs[active_job_id].status,
+        )
+        return web.json_response(
+            {
+                "error": "A job is already being processed",
+                "active_job_id": active_job_id,
+                "active_job_status": jobs[active_job_id].status,
+            },
+            status=409,
+        )
+
     job_id = str(uuid.uuid4())
 
     jobs[job_id] = JobState()
