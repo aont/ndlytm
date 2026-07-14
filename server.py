@@ -73,6 +73,16 @@ def sanitize_filename(filename):
     return sanitized or "track.m4a"
 
 
+def build_track_title(track):
+    work_name = track["workName"]
+    title = track["title"]
+
+    if title == "":
+        return work_name
+
+    return work_name + " - " + title
+
+
 def unique_output_path(directory, filename):
     directory = Path(directory)
     safe_name = sanitize_filename(filename)
@@ -155,7 +165,7 @@ async def process_job(job_id, payload):
 
                     audio = mutagen.mp4.MP4(output_path)
 
-                    track_title = track["workName"] + " - " + track["title"]
+                    track_title = build_track_title(track)
                     audio["\xa9nam"] = [track_title]
                     audio["\xa9ART"] = [track["artist"]]
 
