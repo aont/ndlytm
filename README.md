@@ -6,9 +6,11 @@ A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 m
 
 - Accepts playlist JSON from the browser UI (`/`)
 - Downloads each track using the provided `Cookie` and `BaseURL`
+- Caches the downloaded raw, untagged audio files on the filesystem before metadata is written
 - Tags each file with title/artist/album/track number
 - Optionally embeds album art from a top-level `AlbumArt` URL
 - Temporarily saves each processed track to a server-side output directory
+- Reuses cached raw audio on later jobs when the same track URL is requested
 - Streams progress and logs for the currently running job
 - Packages completed jobs as an uncompressed `.zip` for browser download
 - Deletes generated `.m4a` files from the server after the zip has been transferred to the frontend
@@ -28,13 +30,14 @@ pip install aiohttp mutagen
 ## Run
 
 ```bash
-python3 server.py --port 8080 --output-dir downloads
+python3 server.py --port 8080 --output-dir downloads --raw-cache-dir raw-cache
 ```
 
 The app starts on `http://127.0.0.1:8080`.
 
 - `--port` can be changed to run the backend on a different port.
 - `--output-dir` controls where processed `.m4a` files are staged before zip transfer. It defaults to `downloads`.
+- `--raw-cache-dir` controls where downloaded, untagged source audio files are cached before Mutagen writes tags. It defaults to `raw-cache`.
 
 If you host frontend and backend on different domains, set **Backend Base URI** in the UI (for example, `https://api.example.com`). The value is persisted in browser `localStorage`.
 
@@ -98,5 +101,6 @@ If `AlbumArt` is provided in the JSON payload, the backend downloads that image 
 
 ## Notes
 
+- Raw downloaded audio is cached before tagging using a URL-derived hash plus the original filename. Existing cached raw files are reused without re-downloading.
 - Files are written to the configured output directory after tagging. Existing filenames are not overwritten; a numeric suffix is added instead.
 - Completed jobs can be downloaded once from the frontend. The browser stores the transferred zip as a blob URL, and the backend deletes the generated `.m4a` files after preparing that transfer.

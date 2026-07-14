@@ -2,6 +2,7 @@
 
 import asyncio
 import argparse
+import hashlib
 import json
 import re
 import uuid
@@ -25,6 +26,7 @@ catalogname_pat = re.compile(r"(.*)（(.*)）")
 
 jobs = {}
 output_dir = None
+raw_cache_dir = None
 
 
 @web.middleware
@@ -90,6 +92,13 @@ def build_track_title(track):
         return title
 
     return title + " - " + work_name
+
+
+def cache_filename_for_track(url, filename):
+    safe_name = sanitize_filename(filename)
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+    return f"{digest}-{safe_name}"
+
 
 def unique_output_path(directory, filename):
     directory = Path(directory)
@@ -157,13 +166,27 @@ async def process_job(job_id, payload):
                 filename = match.group(1) + ".m4a"
                 url = base_url + m4a_path
 
-                headers = {"Cookie": cookie}
-                state.log(f"Fetching URL: {url}")
-                async with session.get(url, headers=headers) as resp:
-                    state.log(f"Track response status={resp.status} for {filename}")
-                    resp.raise_for_status()
-                    data = await resp.read()
-                    state.log(f"Fetched bytes={len(data)} for {filename}")
+                cache_path = raw_cache_dir / cache_filename_for_track(url, filename)
+                if cache_path.exists():
+                    state.log(f"Using cached raw track: {cache_path.name}")
+                    data = cache_path.read_bytes()
+                    state.log(f"Loaded cached bytes={len(data)} for {filename}")
+                else:
+                    headers = {"Cookie": cookie}
+                    state.log(f"Fetching URL: {url}")
+                    async with session.get(url, headers=headers) as resp:
+                        state.log(f"Track response status={resp.status} for {filename}")
+                        resp.raise_for_status()
+                        data = await resp.read()
+                        state.log(f"Fetched bytes={len(data)} for {filename}")
+
+                    temp_cache_path = cache_path.with_name(f".{cache_path.name}.{uuid.uuid4().hex}.tmp")
+                    try:
+                        temp_cache_path.write_bytes(data)
+                        temp_cache_path.replace(cache_path)
+                    finally:
+                        temp_cache_path.unlink(missing_ok=True)
+                    state.log(f"Cached raw track: {cache_path}")
 
                 output_path = unique_output_path(output_dir, filename)
                 output_path.write_bytes(data)
@@ -411,17 +434,26 @@ def parse_args():
         default="downloads",
         help="Directory where tagged .m4a files are saved"
     )
+    parser.add_argument(
+        "--raw-cache-dir",
+        default="raw-cache",
+        help="Directory where downloaded, untagged source audio files are cached"
+    )
     return parser.parse_args()
 
 
 def main():
-    global output_dir
+    global output_dir, raw_cache_dir
 
     args = parse_args()
     logging.getLogger().setLevel(getattr(logging, args.log_level))
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     logging.info("Saving processed tracks to %s", output_dir)
+
+    raw_cache_dir = Path(args.raw_cache_dir).expanduser().resolve()
+    raw_cache_dir.mkdir(parents=True, exist_ok=True)
+    logging.info("Caching raw downloaded tracks in %s", raw_cache_dir)
 
     app = web.Application(middlewares=[cors_middleware])
     app["job_tasks"] = set()
