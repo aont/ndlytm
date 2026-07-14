@@ -47,17 +47,37 @@ Paste JSON into the UI in this shape:
   "AlbumArt": "https://cdn.example.com/cover.jpg",
   "PlayListsTracks": [
     {
-      "m4a": "/path/to/file.mp4",
-      "workName": "Work",
-      "title": "Track",
-      "artist": "Artist",
       "album": {
-        "cataloguename": "Album Title（Album Artist）"
-      }
+        "catalogue_link": "/album/catalogueid",
+        "catalogueid": "catalogueid",
+        "cataloguename": "Album Title（Album Artist）",
+        "catlabelid": "catlabelid",
+        "labeldisplayname": "Label Display Name"
+      },
+      "artist": "Artist",
+      "composer": "Composer",
+      "composerShort": "Composer Short",
+      "dbfilename": "dbfilename",
+      "length": "00:05:43",
+      "m4a": "/foobar?path=/media/aacstorage/aac320k/catlabelid/dbfilename_full_320.mp4&tid=406742",
+      "title": "Track",
+      "trackDesc": null,
+      "trackid": 12345,
+      "trackno": 1,
+      "workName": "Work"
     }
   ]
 }
 ```
+
+Top-level fields:
+
+- `Cookie`: cookie header value used when downloading protected track files.
+- `BaseURL`: origin prepended to each track's `m4a` path.
+- `AlbumArt`: optional image URL that is downloaded once and embedded in every saved track.
+- `PlayListsTracks`: array of track objects from the source playlist.
+
+Track fields used by the backend are `m4a`, `workName`, `title`, `artist`, and `album.cataloguename`. The other fields shown above are accepted from the source playlist and preserved in the expected payload shape, but are not currently used when downloading or tagging files.
 
 ## Bookmarklet helper
 
