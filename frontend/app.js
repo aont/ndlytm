@@ -1,5 +1,7 @@
 let currentJobs = new Map();
 let progressEventSources = new Map();
+let downloadObjectUrls = new Map();
+let downloadFetches = new Set();
 
 function debugLog(...args) {
     console.debug("[ndl-webui]", ...args);
@@ -118,6 +120,7 @@ function getOrCreateJobElement(jobId) {
         <p class="job-status" id="status-${jobId}">Status: queued</p>
         <p class="job-progress" id="progress-${jobId}">Progress: 0 / 0 (saved: 0)</p>
         <progress id="bar-${jobId}" value="0" max="100"></progress>
+        <p class="job-download" id="download-${jobId}"></p>
         <pre id="logs-${jobId}" class="job-logs"></pre>
     `;
 
@@ -148,9 +151,51 @@ function renderJobUI(jobId, data) {
         document.getElementById(`status-${jobId}`).innerText =
             `Status: completed (saved: ${data.saved || 0})`;
         closeProgressStream(jobId);
+
+        if (data.download_ready) {
+            prepareDownloadLink(jobId);
+        } else if (data.downloaded) {
+            document.getElementById(`download-${jobId}`).innerText =
+                "Download already transferred; generated server files were deleted.";
+        }
     }
 
     saveTrackedJobIds();
+}
+
+async function prepareDownloadLink(jobId) {
+    if (downloadObjectUrls.has(jobId) || downloadFetches.has(jobId)) {
+        return;
+    }
+
+    const downloadElement = document.getElementById(`download-${jobId}`);
+    downloadElement.innerText = "Preparing zip download...";
+    downloadFetches.add(jobId);
+
+    try {
+        const downloadUrl = buildApiUrl(`/download/${jobId}`);
+        const resp = await fetch(downloadUrl);
+        if (!resp.ok) {
+            throw new Error(`Download failed (${resp.status})`);
+        }
+
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        downloadObjectUrls.set(jobId, objectUrl);
+
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = `ndl-${jobId}.zip`;
+        link.innerText = "Download uncompressed zip";
+
+        downloadElement.innerHTML = "";
+        downloadElement.appendChild(link);
+    } catch (error) {
+        debugLog("Failed to prepare download", { jobId, error });
+        downloadElement.innerText = error.message;
+    } finally {
+        downloadFetches.delete(jobId);
+    }
 }
 
 function closeProgressStream(jobId) {

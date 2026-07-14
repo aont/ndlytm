@@ -6,6 +6,8 @@ import json
 import re
 import uuid
 import logging
+import tempfile
+import zipfile
 from pathlib import Path
 
 import aiohttp
@@ -51,6 +53,8 @@ class JobState:
         self.error = None
         self.saved = 0
         self.status = "queued"
+        self.files = []
+        self.downloaded = False
 
     def snapshot(self):
         return {
@@ -60,6 +64,8 @@ class JobState:
             "error": self.error,
             "saved": self.saved,
             "status": self.status,
+            "download_ready": self.done and not self.error and not self.downloaded and bool(self.files),
+            "downloaded": self.downloaded,
             "logs": self.logs[-200:],
         }
 
@@ -185,6 +191,7 @@ async def process_job(job_id, payload):
                     audio.save()
 
                     state.saved += 1
+                    state.files.append(output_path)
                     state.log(f"Saved {output_path}")
                 except Exception:
                     if output_path.exists():
@@ -256,6 +263,78 @@ async def start_job(request):
     await queue.put((job_id, payload))
 
     return web.json_response({"job_id": job_id, "status": state.status})
+
+
+def build_download_name(job_id):
+    return sanitize_filename(f"ndl-{job_id}.zip")
+
+
+def remove_job_files(state):
+    removed = 0
+    for file_path in list(state.files):
+        path = Path(file_path)
+        if path.exists():
+            path.unlink()
+            removed += 1
+    state.files = []
+    return removed
+
+
+async def download_job(request):
+    job_id = request.match_info["job_id"]
+    state = jobs.get(job_id)
+
+    if not state:
+        return web.json_response({"error": "Invalid job ID"}, status=404)
+
+    if state.error:
+        return web.json_response({"error": state.error}, status=409)
+
+    if not state.done:
+        return web.json_response({"error": "Job is not complete yet"}, status=409)
+
+    available_files = [Path(file_path) for file_path in state.files if Path(file_path).exists()]
+    if not available_files:
+        return web.json_response({"error": "Job files are no longer available"}, status=410)
+
+    download_name = build_download_name(job_id)
+
+    temp_file = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+
+    try:
+        with zipfile.ZipFile(temp_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+            used_names = set()
+            for file_path in available_files:
+                arcname = file_path.name
+                if arcname in used_names:
+                    stem = file_path.stem
+                    suffix = file_path.suffix
+                    counter = 1
+                    while f"{stem}-{counter}{suffix}" in used_names:
+                        counter += 1
+                    arcname = f"{stem}-{counter}{suffix}"
+                used_names.add(arcname)
+                archive.write(file_path, arcname=arcname)
+
+        zip_data = temp_path.read_bytes()
+        temp_path.unlink(missing_ok=True)
+        removed = remove_job_files(state)
+        state.downloaded = True
+        state.log(f"Transferred {download_name}; deleted {removed} generated m4a files")
+
+        return web.Response(
+            body=zip_data,
+            headers={
+                "Content-Disposition": f'attachment; filename="{download_name}"',
+                "Content-Type": "application/zip",
+                "Cache-Control": "no-store",
+            },
+        )
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 async def get_progress(request):
@@ -351,6 +430,7 @@ def main():
     app.on_cleanup.append(on_cleanup)
     app.router.add_post("/start", start_job)
     app.router.add_get("/progress/{job_id}", get_progress)
+    app.router.add_get("/download/{job_id}", download_job)
     app.router.add_get("/progress-stream/{job_id}", stream_progress)
     app.router.add_static("/", path="./frontend", show_index=True)
 

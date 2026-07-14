@@ -1,6 +1,6 @@
 # ndl
 
-A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, and saves the processed files on the server.
+A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, transfers the processed files to the browser as an uncompressed zip, and deletes the generated server-side track files after transfer.
 
 ## What it does
 
@@ -8,8 +8,10 @@ A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 m
 - Downloads each track using the provided `Cookie` and `BaseURL`
 - Tags each file with title/artist/album/track number
 - Optionally embeds album art from a top-level `AlbumArt` URL
-- Saves each processed track to a server-side output directory
+- Temporarily saves each processed track to a server-side output directory
 - Streams progress and logs for the currently running job
+- Packages completed jobs as an uncompressed `.zip` for browser download
+- Deletes generated `.m4a` files from the server after the zip has been transferred to the frontend
 
 ## Requirements
 
@@ -32,7 +34,7 @@ python3 server.py --port 8080 --output-dir downloads
 The app starts on `http://127.0.0.1:8080`.
 
 - `--port` can be changed to run the backend on a different port.
-- `--output-dir` controls where processed `.m4a` files are saved. It defaults to `downloads`.
+- `--output-dir` controls where processed `.m4a` files are staged before zip transfer. It defaults to `downloads`.
 
 If you host frontend and backend on different domains, set **Backend Base URI** in the UI (for example, `https://api.example.com`). The value is persisted in browser `localStorage`.
 
@@ -92,7 +94,9 @@ If `AlbumArt` is provided in the JSON payload, the backend downloads that image 
 - `POST /start` — start a save job
 - `GET /progress/{job_id}` — get progress + recent logs
 - `GET /progress-stream/{job_id}` — stream progress events
+- `GET /download/{job_id}` — return completed tracks as an uncompressed zip and delete the generated server-side `.m4a` files after the response body is prepared
 
 ## Notes
 
 - Files are written to the configured output directory after tagging. Existing filenames are not overwritten; a numeric suffix is added instead.
+- Completed jobs can be downloaded once from the frontend. The browser stores the transferred zip as a blob URL, and the backend deletes the generated `.m4a` files after preparing that transfer.
