@@ -1,4 +1,4 @@
-# ndlytm
+# ndl
 
 A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, and saves the processed files on the server.
 
