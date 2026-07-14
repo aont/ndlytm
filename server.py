@@ -73,6 +73,27 @@ def sanitize_filename(filename):
     return sanitized or "track.m4a"
 
 
+def sanitize_directory_name(dirname):
+    sanitized = re.sub(r'[\\/:*?"<>|]+', "_", str(dirname)).strip()
+    return sanitized or "unknown-catalog"
+
+
+def get_catalog_id(payload, tracks):
+    for key in ("catalogid", "catalogId", "CatalogID", "catalogID"):
+        value = payload.get(key)
+        if value:
+            return value
+
+    for track in tracks:
+        album = track.get("album", {})
+        for key in ("catalogid", "catalogId", "CatalogID", "catalogID"):
+            value = album.get(key)
+            if value:
+                return value
+
+    return "unknown-catalog"
+
+
 def build_track_title(track):
     work_name = track["workName"]
     title = track["title"]
@@ -119,9 +140,13 @@ async def process_job(job_id, payload):
         tracks = payload["PlayListsTracks"]
         album_art_url = payload.get("AlbumArt")
         album_art_cover = None
+        catalog_id = get_catalog_id(payload, tracks)
+        job_output_dir = output_dir / sanitize_directory_name(catalog_id)
+        job_output_dir.mkdir(parents=True, exist_ok=True)
 
         state.total = len(tracks)
         state.log(f"Starting job {job_id} with {state.total} tracks")
+        state.log(f"Saving tracks for catalogid={catalog_id} to {job_output_dir}")
         async with aiohttp.ClientSession() as session:
             if album_art_url:
                 state.log(f"Downloading album art: {album_art_url}")
@@ -159,7 +184,7 @@ async def process_job(job_id, payload):
                     data = await resp.read()
                     state.log(f"Fetched bytes={len(data)} for {filename}")
 
-                output_path = unique_output_path(output_dir, filename)
+                output_path = unique_output_path(job_output_dir, filename)
                 output_path.write_bytes(data)
 
                 try:
