@@ -3,16 +3,14 @@
 import asyncio
 import argparse
 import json
-import os
 import re
 import uuid
-import tempfile
 import logging
+from pathlib import Path
 
 import aiohttp
 from aiohttp import web
 import mutagen.mp4
-from ytmusicapi import YTMusic
 
 
 logging.basicConfig(
@@ -24,7 +22,7 @@ mp4_fn_pat = re.compile(r"/([^/]+)\.mp4")
 catalogname_pat = re.compile(r"(.*)（(.*)）")
 
 jobs = {}
-ytmusic_auth_path = None
+output_dir = None
 
 
 @web.middleware
@@ -51,7 +49,7 @@ class JobState:
         self.logs = []
         self.done = False
         self.error = None
-        self.uploaded = 0
+        self.saved = 0
         self.status = "queued"
 
     def snapshot(self):
@@ -60,7 +58,7 @@ class JobState:
             "total": self.total,
             "done": self.done,
             "error": self.error,
-            "uploaded": self.uploaded,
+            "saved": self.saved,
             "status": self.status,
             "logs": self.logs[-200:],
         }
@@ -70,14 +68,37 @@ class JobState:
         self.logs.append(message)
 
 
+def sanitize_filename(filename):
+    sanitized = re.sub(r'[\\/:*?"<>|]+', "_", filename).strip()
+    return sanitized or "track.m4a"
+
+
+def unique_output_path(directory, filename):
+    directory = Path(directory)
+    safe_name = sanitize_filename(filename)
+    candidate = directory / safe_name
+
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem
+    suffix = candidate.suffix
+    counter = 1
+    while True:
+        candidate = directory / f"{stem}-{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
 async def process_job(job_id, payload):
     state = jobs[job_id]
     state.status = "running"
 
-    if not ytmusic_auth_path:
+    if not output_dir:
         state.status = "failed"
-        state.error = "YTMusic browser auth path is not configured"
-        state.log("Job failed: YTMusic browser auth path is not configured")
+        state.error = "Output directory is not configured"
+        state.log("Job failed: Output directory is not configured")
         return
 
     try:
@@ -89,10 +110,6 @@ async def process_job(job_id, payload):
 
         state.total = len(tracks)
         state.log(f"Starting job {job_id} with {state.total} tracks")
-        state.log(f"Initializing YTMusic client with browser auth: {ytmusic_auth_path}")
-
-        ytmusic = await asyncio.to_thread(YTMusic, ytmusic_auth_path)
-
         async with aiohttp.ClientSession() as session:
             if album_art_url:
                 state.log(f"Downloading album art: {album_art_url}")
@@ -126,17 +143,17 @@ async def process_job(job_id, payload):
                 state.log(f"Fetching URL: {url}")
                 async with session.get(url, headers=headers) as resp:
                     state.log(f"Track response status={resp.status} for {filename}")
+                    resp.raise_for_status()
                     data = await resp.read()
                     state.log(f"Fetched bytes={len(data)} for {filename}")
 
-                temp = tempfile.NamedTemporaryFile(delete=False, suffix=".m4a")
-                temp.write(data)
-                temp.close()
+                output_path = unique_output_path(output_dir, filename)
+                output_path.write_bytes(data)
 
                 try:
-                    state.log(f"Tagging {filename}")
+                    state.log(f"Tagging {output_path.name}")
 
-                    audio = mutagen.mp4.MP4(temp.name)
+                    audio = mutagen.mp4.MP4(output_path)
 
                     track_title = track["workName"] + " - " + track["title"]
                     audio["\xa9nam"] = [track_title]
@@ -155,19 +172,19 @@ async def process_job(job_id, payload):
 
                     audio.save()
 
-                    state.log(f"Uploading {filename} to YouTube Music")
-                    upload_result = await asyncio.to_thread(ytmusic.upload_song, temp.name)
-                    state.log(f"Upload result for {filename}: {upload_result}")
-                    state.uploaded += 1
-                finally:
-                    os.remove(temp.name)
+                    state.saved += 1
+                    state.log(f"Saved {output_path}")
+                except Exception:
+                    if output_path.exists():
+                        output_path.unlink()
+                    raise
 
                 state.progress = track_num
-                state.log(f"Finished {filename}")
+                state.log(f"Finished {output_path.name}")
 
         state.done = True
         state.status = "completed"
-        state.log(f"Job completed successfully (uploaded={state.uploaded})")
+        state.log(f"Job completed successfully (saved={state.saved})")
     except Exception as exc:
         state.status = "failed"
         state.error = str(exc)
@@ -299,19 +316,21 @@ def parse_args():
         help="Logging level"
     )
     parser.add_argument(
-        "--ytmusic-browser-auth",
-        default="browser.json",
-        help="Path to ytmusicapi browser.json auth file"
+        "--output-dir",
+        default="downloads",
+        help="Directory where tagged .m4a files are saved"
     )
     return parser.parse_args()
 
 
 def main():
-    global ytmusic_auth_path
+    global output_dir
 
     args = parse_args()
     logging.getLogger().setLevel(getattr(logging, args.log_level))
-    ytmusic_auth_path = args.ytmusic_browser_auth
+    output_dir = Path(args.output_dir).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logging.info("Saving processed tracks to %s", output_dir)
 
     app = web.Application(middlewares=[cors_middleware])
     app["job_tasks"] = set()

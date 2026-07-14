@@ -116,7 +116,7 @@ function getOrCreateJobElement(jobId) {
     card.innerHTML = `
         <h3>Job <code>${jobId}</code></h3>
         <p class="job-status" id="status-${jobId}">Status: queued</p>
-        <p class="job-progress" id="progress-${jobId}">Progress: 0 / 0 (uploaded: 0)</p>
+        <p class="job-progress" id="progress-${jobId}">Progress: 0 / 0 (saved: 0)</p>
         <progress id="bar-${jobId}" value="0" max="100"></progress>
         <pre id="logs-${jobId}" class="job-logs"></pre>
     `;
@@ -136,7 +136,7 @@ function renderJobUI(jobId, data) {
     document.getElementById(`status-${jobId}`).innerText = `Status: ${data.status || "unknown"}`;
     document.getElementById(`bar-${jobId}`).value = percent;
     document.getElementById(`progress-${jobId}`).innerText =
-        `Progress: ${data.progress} / ${data.total} (uploaded: ${data.uploaded || 0})`;
+        `Progress: ${data.progress} / ${data.total} (saved: ${data.saved || 0})`;
 
     const logs = data.logs || [];
     document.getElementById(`logs-${jobId}`).innerText = logs.join("\n");
@@ -146,7 +146,7 @@ function renderJobUI(jobId, data) {
         closeProgressStream(jobId);
     } else if (data.done) {
         document.getElementById(`status-${jobId}`).innerText =
-            `Status: completed (uploaded: ${data.uploaded || 0})`;
+            `Status: completed (saved: ${data.saved || 0})`;
         closeProgressStream(jobId);
     }
 
@@ -226,7 +226,7 @@ document.getElementById("startBtn").onclick = async () => {
         total: 0,
         done: false,
         error: null,
-        uploaded: 0,
+        saved: 0,
         status: data.status || "queued",
         logs: [`Queued job ${data.job_id}`]
     };

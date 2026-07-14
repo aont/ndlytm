@@ -1,6 +1,6 @@
 # ndlytm
 
-A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, and uploads them to YouTube Music via `ytmusicapi`.
+A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 metadata, and saves the processed files on the server.
 
 ## What it does
 
@@ -8,7 +8,7 @@ A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 m
 - Downloads each track using the provided `Cookie` and `BaseURL`
 - Tags each file with title/artist/album/track number
 - Optionally embeds album art from a top-level `AlbumArt` URL
-- Uploads each processed track to YouTube Music with `ytmusicapi`
+- Saves each processed track to a server-side output directory
 - Streams progress and logs for the currently running job
 
 ## Requirements
@@ -16,24 +16,23 @@ A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 m
 - Python 3.9+
 - `aiohttp`
 - `mutagen`
-- `ytmusicapi`
 
 Install dependencies:
 
 ```bash
-pip install aiohttp mutagen ytmusicapi
+pip install aiohttp mutagen
 ```
 
 ## Run
 
 ```bash
-python3 server.py --port 8080 --ytmusic-browser-auth /path/to/browser.json
+python3 server.py --port 8080 --output-dir downloads
 ```
 
 The app starts on `http://127.0.0.1:8080`.
 
 - `--port` can be changed to run the backend on a different port.
-- `--ytmusic-browser-auth` should point to a `browser.json` generated for `ytmusicapi` authentication.
+- `--output-dir` controls where processed `.m4a` files are saved. It defaults to `downloads`.
 
 If you host frontend and backend on different domains, set **Backend Base URI** in the UI (for example, `https://api.example.com`). The value is persisted in browser `localStorage`.
 
@@ -66,15 +65,14 @@ Paste JSON into the UI in this shape:
 
 The bookmarklet explicitly reads the album image (`#album-link > img`) from the source page, stores it in `AlbumArt`, and passes it along in the generated payload.
 
-If `AlbumArt` is provided in the JSON payload, the backend downloads that image once per job and writes it into each tagged `.m4a` file using Mutagen before upload.
+If `AlbumArt` is provided in the JSON payload, the backend downloads that image once per job and writes it into each tagged `.m4a` file using Mutagen before saving.
 
 ## Endpoints
 
-- `POST /start` — start an upload job (returns `409` if another job is running)
+- `POST /start` — start a save job
 - `GET /progress/{job_id}` — get progress + recent logs
 - `GET /progress-stream/{job_id}` — stream progress events
 
 ## Notes
 
-- Files are stored in temporary files only while tagging/uploading and then removed.
-- The server must be started with a valid `--ytmusic-browser-auth` path before running jobs.
+- Files are written to the configured output directory after tagging. Existing filenames are not overwritten; a numeric suffix is added instead.
