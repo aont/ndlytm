@@ -22,7 +22,10 @@ logging.basicConfig(
 )
 
 mp4_fn_pat = re.compile(r"/([^/]+)\.mp4")
-catalogname_pat = re.compile(r"(.*)（(.*)）")
+catalogname_patterns = (
+    re.compile(r"^(?P<title>.+?)（(?P<artist>.+?)）$"),
+    re.compile(r"^(?P<title>.+?)\((?P<artist>.+?)\)$"),
+)
 
 jobs = {}
 output_dir = None
@@ -97,6 +100,30 @@ def build_track_title(track, include_composer=False):
         return track_title + " - " + composer
 
     return track_title
+
+
+def match_catalogue_name(value):
+    catalogue_name = str(value or "").strip()
+
+    for pattern in catalogname_patterns:
+        match = pattern.fullmatch(catalogue_name)
+        if match:
+            return match
+
+    return None
+
+
+def parse_catalogue_name(value, fallback_artist=""):
+    catalogue_name = str(value or "").strip()
+    match = match_catalogue_name(catalogue_name)
+
+    if match:
+        return (
+            match.group("title").strip(),
+            match.group("artist").strip(),
+        )
+
+    return catalogue_name or "Unknown Album", fallback_artist
 
 
 def playlist_has_multiple_composers(tracks):
@@ -215,13 +242,21 @@ async def process_job(job_id, payload):
                     if composer:
                         audio["\xa9wrt"] = [composer]
 
-                    album = track["album"]
-                    match_album = catalogname_pat.match(album["cataloguename"])
-                    album_title = match_album.group(1)
-                    album_artist = match_album.group(2)
+                    album = track.get("album") or {}
+                    catalogue_name = album.get("cataloguename")
+                    if not match_catalogue_name(catalogue_name):
+                        state.log(
+                            f"Unrecognized cataloguename for track {track_num}: "
+                            f"{catalogue_name!r}"
+                        )
+                    album_title, album_artist = parse_catalogue_name(
+                        catalogue_name,
+                        fallback_artist=track.get("artist", ""),
+                    )
 
                     audio["\xa9alb"] = [album_title]
-                    audio["aART"] = [album_artist]
+                    if album_artist:
+                        audio["aART"] = [album_artist]
                     audio["trkn"] = [(track_num, state.total)]
                     if album_art_cover:
                         audio["covr"] = [album_art_cover]
