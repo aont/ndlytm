@@ -81,17 +81,27 @@ def sanitize_filename(filename):
     return sanitized or "track.m4a"
 
 
-def build_track_title(track):
+def build_track_title(track, include_composer=False):
     work_name = track["workName"]
     title = track["title"]
 
     if title == "":
-        return work_name
-    
-    if work_name == "":
-        return title
+        track_title = work_name
+    elif work_name == "":
+        track_title = title
+    else:
+        track_title = title + " - " + work_name
 
-    return title + " - " + work_name
+    composer = track.get("composer", "")
+    if include_composer and composer:
+        return track_title + " - " + composer
+
+    return track_title
+
+
+def playlist_has_multiple_composers(tracks):
+    composers = {track.get("composer", "") for track in tracks}
+    return len(composers) > 1
 
 
 def cache_filename_for_track(url, filename):
@@ -136,6 +146,7 @@ async def process_job(job_id, payload):
         album_art_cover = None
 
         state.total = len(tracks)
+        include_composer_in_title = playlist_has_multiple_composers(tracks)
         state.log(f"Starting job {job_id} with {state.total} tracks")
         async with aiohttp.ClientSession() as session:
             if album_art_url:
@@ -196,9 +207,13 @@ async def process_job(job_id, payload):
 
                     audio = mutagen.mp4.MP4(output_path)
 
-                    track_title = build_track_title(track)
+                    track_title = build_track_title(track, include_composer_in_title)
                     audio["\xa9nam"] = [track_title]
                     audio["\xa9ART"] = [track["artist"]]
+
+                    composer = track.get("composer")
+                    if composer:
+                        audio["\xa9wrt"] = [composer]
 
                     album = track["album"]
                     match_album = catalogname_pat.match(album["cataloguename"])

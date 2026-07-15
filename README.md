@@ -7,7 +7,7 @@ A small local web app that downloads a playlist of `.m4a` tracks, rewrites MP4 m
 - Accepts playlist JSON from the browser UI (`/`)
 - Downloads each track using the provided `Cookie` and `BaseURL`
 - Caches the downloaded raw, untagged audio files on the filesystem before metadata is written
-- Tags each file with title/artist/album/track number
+- Tags each file with title/artist/composer/album/track number
 - Optionally embeds album art from a top-level `AlbumArt` URL
 - Temporarily saves each processed track to a server-side output directory
 - Reuses cached raw audio on later jobs when the same track URL is requested
@@ -82,7 +82,7 @@ Top-level fields:
 - `AlbumArt`: optional image URL that is downloaded once and embedded in every saved track.
 - `PlayListsTracks`: array of track objects from the source playlist.
 
-Track fields used by the backend are `m4a`, `workName`, `title`, `artist`, and `album.cataloguename`. The other fields shown above are accepted from the source playlist and preserved in the expected payload shape, but are not currently used when downloading or tagging files.
+Track fields used by the backend are `m4a`, `workName`, `title`, `artist`, `composer`, and `album.cataloguename`. The backend writes the composer into each track. When the playlist contains more than one composer, each output title also ends with ` - {composer}` so the composer is visible in the song list. The other fields shown above are accepted from the source playlist and preserved in the expected payload shape, but are not currently used when downloading or tagging files.
 
 ## Bookmarklet helper
 
