@@ -113,7 +113,7 @@ def match_catalogue_name(value):
     return None
 
 
-def parse_catalogue_name(value, fallback_artist=""):
+def parse_catalogue_name(value, fallback_artist=None):
     catalogue_name = str(value or "").strip()
     match = match_catalogue_name(catalogue_name)
 
@@ -251,7 +251,7 @@ async def process_job(job_id, payload):
                         )
                     album_title, album_artist = parse_catalogue_name(
                         catalogue_name,
-                        fallback_artist=track.get("artist", ""),
+                        # fallback_artist=track.get("artist", ""),
                     )
 
                     audio["\xa9alb"] = [album_title]
